@@ -22,17 +22,17 @@ jobs:
       #step 1 is to get the code
      - name: Checkout code
         # "uses" means "use this pre-made action"
-        # actions/checkout@v3 is made by GitHub 
-       uses: actions/checkout@v3
+        # actions/checkout@v4 is made by GitHub 
+       uses: actions/checkout@v4
         # What this does: Downloads your code from GitHub
       
       #step 2 install node 
      - name: Setup Node jobs
-       uses: actions/setup-node@v3
+       uses: actions/setup-node@v4
        with:
           node-version: '18'
         # Cache npm dependencies for faster builds
-          cache: npm
+          cache: 'npm'
       
       #step 3 install dependecies
      - name: Install Dependecies
@@ -65,11 +65,11 @@ jobs:
 
       #step 7 save build
      - name: Upload Build to Artifact 
-       uses: actions/upload-artifact@v3
+       uses: actions/upload-artifact@v4
        with:
           name: frontend-build
           path: .next/
-          retention-days: '7'
+          retention-days: 7
            # What this does: Saves build files for later use
         # retention-days: Keep files for 7 days
 
@@ -83,7 +83,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       
       # Setup Docker Buildx (improved Docker builder)
       - name: Set up Docker Buildx
