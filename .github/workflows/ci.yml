@@ -111,11 +111,6 @@ jobs:
           context: ./pocketmate-frontend
           file: ./pocketmate-frontend/Dockerfile
           push: true
-          tags: |
-            ghcr.io/${{ steps.repo-owner.outputs.owner }}/my-frontend:latest
-            ghcr.io/${{ steps.repo-owner.outputs.owner }}/my-frontend:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
         # What this does: Creates Docker image of your app
         # github.sha: Unique ID of this code version
