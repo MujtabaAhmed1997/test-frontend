@@ -108,8 +108,8 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
-          context: ./pocketmate-frontend
-          file: ./pocketmate-frontend/Dockerfile
+          # context: ./pocketmate-frontend
+          # file: ./pocketmate-frontend/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:latest
