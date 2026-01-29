@@ -109,7 +109,7 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: ./pocketmate-frontend
-          file: Dockerfile
+          file: ./pocketmate-frontend/Dockerfile
           push: true
           tags: |
             ghcr.io/${{ steps.repo-owner.outputs.owner }}/my-frontend:latest
