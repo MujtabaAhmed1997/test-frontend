@@ -4,7 +4,7 @@ name: Frontend CI/CD
 on:
   push:
     branches: [staging,main]
-  pull:
+  pull_request:
     branches: [staging,main]
 
 # Jobs: The actual work to do
@@ -124,7 +124,7 @@ jobs:
     # This is a protected environment
     environment:
       name: staging
-      url: http://${{ secrets.DEPLOY_HOST }}:3008
+      # Note: URL cannot use secrets directly, update manually or use environment-specific URL
     
     steps:
       # Setup SSH key for deployment
@@ -169,7 +169,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     environment:
       name: production
-      url: http://${{ secrets.DEPLOY_HOST }}:3008
+      # Note: URL cannot use secrets directly, update manually or use environment-specific URL
     
     steps:
       # Setup SSH key for deployment
