@@ -1,0 +1,209 @@
+name: Frontend CI/CD
+
+# "on" means "when should this run?"
+on:
+  push:
+    branches: [staging,main]
+  pull:
+    branches: [staging,main]
+
+# Jobs: The actual work to do
+jobs:
+
+  # JOB 1: BUILD AND TEST
+  build-and-test:
+   # Name shown in GitHub UI
+    name : Frontend Build AND Test
+   # What computer to use (Ubuntu Linux)
+    runs-on: ubuntu-latest
+   
+   #individual task
+    steps:
+      #step 1 is to get the code
+     - name: Checkout code
+        # "uses" means "use this pre-made action"
+        # actions/checkout@v3 is made by GitHub 
+       uses: actions/checkout@v3
+        # What this does: Downloads your code from GitHub
+      
+      #step 2 install node 
+     - name: Setup Node jobs
+       uses: actions/setup-node@v3
+       with:
+          node-version: '18'
+        # Cache npm dependencies for faster builds
+          cache: npm
+      
+      #step 3 install dependecies
+     - name: Install Dependecies
+       run: npm ci
+        # What this does: Installs packages from package-lock.json
+        # Why "npm ci" not "npm install"?
+        # - npm ci is faster
+        # - npm ci is more reliable in CI/CD
+        # - npm ci uses exact versions from package-lock.json
+     
+     #step 4 check code quality
+     - name: Code Quality Checkout
+       run: npm run lint || echo linting is skipped
+         # What this does: Checks code style/quality
+        # "|| echo" means: if lint fails, just print message (don't stop)
+
+      #step 5 Testing
+     - name: Testing
+       run: npm test -- --passWithNoTests
+        # What this does: Runs your test files
+        # --passWithNoTests: Don't fail if no tests exist yet
+
+      #step 6 Build 
+     - name: Build application
+       env:
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.API_URL }}
+       run: npm run build
+        # What this does: Creates production build
+        # ${{ secrets.API_URL }}: Gets secret from GitHub settings
+
+      #step 7 save build
+     - name: Upload Build to Artifact 
+       uses: actions/upload-artifact@v3
+       with:
+          name: frontend-build
+          path: .next/
+          retention-days: '7'
+           # What this does: Saves build files for later use
+        # retention-days: Keep files for 7 days
+
+
+ #JOB 2: BUILD DOCKER IMAGE
+  docker-build:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    # This job needs build-and-test to finish first
+    needs: build-and-test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      # Setup Docker Buildx (improved Docker builder)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+        # What this does: Installs better Docker builder
+      
+      #login into github container registry
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Build the Docker image
+      - name: Build Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/my-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/my-frontend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+        # What this does: Creates Docker image of your app
+        # github.sha: Unique ID of this code version
+
+  # JOB 3: DEPLOY TO STAGING
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: docker-build
+    # Only run if branch is "staging"
+    if: github.ref == 'refs/heads/staging'
+    # This is a protected environment
+    environment:
+      name: staging
+      url: http://${{ secrets.DEPLOY_HOST }}:3008
+    
+    steps:
+      # Setup SSH key for deployment
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
+        # What this does: Configures SSH key from GitHub secrets for secure connection
+      
+      # Deploy to EC2 instance via SSH
+      - name: Deploy to staging server
+        env:
+          API_URL: ${{ secrets.STAGING_API_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "Deploying to EC2 staging server..."
+          ssh -i ~/.ssh/deploy_key \
+              -p ${{ secrets.DEPLOY_PORT || 22 }} \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "cd ${{ secrets.DEPLOY_PATH }} && \
+               echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
+               docker pull ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker stop frontend 2>/dev/null || true && \
+               docker rm frontend 2>/dev/null || true && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker image prune -f && \
+               echo 'Deployment complete!'"
+        # What this does: SSH into EC2 instance and deploy the new Docker image
+
+  # JOB 4: DEPLOY TO PRODUCTION
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: docker-build
+    # Only run if branch is "main"
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: production
+      url: http://${{ secrets.DEPLOY_HOST }}:3008
+    
+    steps:
+      # Setup SSH key for deployment
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
+        # What this does: Configures SSH key from GitHub secrets for secure connection
+      
+      # Deploy to EC2 instance via SSH
+      - name: Deploy to production server
+        env:
+          API_URL: ${{ secrets.PRODUCTION_API_URL }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
+        run: |
+          echo "Deploying to EC2 production server..."
+          ssh -i ~/.ssh/deploy_key \
+              -p ${{ secrets.DEPLOY_PORT || 22 }} \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "cd ${{ secrets.DEPLOY_PATH }} && \
+               echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
+               docker pull ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker stop frontend 2>/dev/null || true && \
+               docker rm frontend 2>/dev/null || true && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker image prune -f && \
+               echo 'Deployment complete!'"
+        # What this does: SSH into EC2 instance and deploy the new Docker image
+
+
+
