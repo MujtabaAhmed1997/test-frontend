@@ -86,6 +86,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
+      # Convert repository owner to lowercase for Docker tags
+      - name: Set lowercase repository owner
+        id: repo-owner
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+      
       # Setup Docker Buildx (improved Docker builder)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
@@ -107,8 +112,8 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/my-frontend:latest
-            ghcr.io/${{ github.repository_owner }}/my-frontend:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/my-frontend:latest
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/my-frontend:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -145,6 +150,7 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
         run: |
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "Deploying to EC2 staging server..."
           ssh -i ~/.ssh/deploy_key \
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
@@ -153,10 +159,10 @@ jobs:
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "cd ${{ secrets.DEPLOY_PATH }} && \
                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
-               docker pull ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker pull ghcr.io/$REPO_OWNER_LOWER/my-frontend:latest && \
                docker stop frontend 2>/dev/null || true && \
                docker rm frontend 2>/dev/null || true && \
-               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/my-frontend:latest && \
                docker image prune -f && \
                echo 'Deployment complete!'"
         # What this does: SSH into EC2 instance and deploy the new Docker image
@@ -190,6 +196,7 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
         run: |
+          REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "Deploying to EC2 production server..."
           ssh -i ~/.ssh/deploy_key \
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
@@ -198,10 +205,10 @@ jobs:
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "cd ${{ secrets.DEPLOY_PATH }} && \
                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
-               docker pull ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker pull ghcr.io/$REPO_OWNER_LOWER/my-frontend:latest && \
                docker stop frontend 2>/dev/null || true && \
                docker rm frontend 2>/dev/null || true && \
-               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$GITHUB_REPO_OWNER/my-frontend:latest && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/my-frontend:latest && \
                docker image prune -f && \
                echo 'Deployment complete!'"
         # What this does: SSH into EC2 instance and deploy the new Docker image
