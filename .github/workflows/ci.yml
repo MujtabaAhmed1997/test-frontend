@@ -191,7 +191,31 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
+          # Verify SSH key format
+          if ! ssh-keygen -l -f ~/.ssh/deploy_key &>/dev/null; then
+            echo "ERROR: Invalid SSH key format in DEPLOY_SSH_KEY secret"
+            exit 1
+          fi
         # What this does: Configures SSH key from GitHub secrets for secure connection
+      
+      # Test SSH connection before deployment
+      - name: Test SSH connection
+        run: |
+          echo "Testing SSH connection..."
+          ssh -i ~/.ssh/deploy_key \
+              -p ${{ secrets.DEPLOY_PORT || 22 }} \
+              -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "echo 'SSH connection successful'" || {
+            echo "ERROR: SSH connection failed. Please verify:"
+            echo "1. DEPLOY_HOST is correct: ${{ secrets.DEPLOY_HOST }}"
+            echo "2. DEPLOY_USER is correct: ${{ secrets.DEPLOY_USER }}"
+            echo "3. DEPLOY_SSH_KEY is the correct private key"
+            echo "4. Public key is in ~/.ssh/authorized_keys on EC2"
+            exit 1
+          }
       
       # Deploy to EC2 instance via SSH
       - name: Deploy to production server
