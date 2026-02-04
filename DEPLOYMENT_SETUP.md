@@ -263,3 +263,7 @@ If you encounter issues:
 3. Test SSH connection manually
 4. Check Docker and network configuration on local machine
 
+
+
+
+
