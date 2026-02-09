@@ -47,18 +47,14 @@ jobs:
         # - npm ci is more reliable in CI/CD
         # - npm ci uses exact versions from package-lock.json
      
-     #step 4 check code quality
-     - name: Code Quality Checkout
-       run: npm run lint || echo linting is skipped
-         # What this does: Checks code style/quality
-        # "|| echo" means: if lint fails, just print message (don't stop)
-
-      #step 5 Testing
-     - name: Testing
-       run: npm test -- --passWithNoTests || echo "Test script not found, skipping tests"
+     #step 4 check code quality and testing (run in parallel for speed)
+     - name: Code Quality and Testing
+       run: |
+         npm run lint || echo "Linting skipped" &
+         npm test -- --passWithNoTests || echo "Tests skipped" &
+         wait
        continue-on-error: true
-        # What this does: Runs your test files if test script exists
-        # continue-on-error: Allows step to pass even if test script doesn't exist
+        # What this does: Runs lint and tests in parallel to save time
 
       #step 6 Build 
      - name: Build application
@@ -67,16 +63,7 @@ jobs:
        run: npm run build
         # What this does: Creates production build
         # ${{ secrets.API_URL }}: Gets secret from GitHub settings
-
-      #step 7 save build
-     - name: Upload Build to Artifact 
-       uses: actions/upload-artifact@v4
-       with:
-          name: frontend-build-staging
-          path: .next/
-          retention-days: 7
-           # What this does: Saves build files for later use
-        # retention-days: Keep files for 7 days
+        # Note: Build artifact not uploaded - Docker builds from source directly
 
 
  #JOB 2: BUILD DOCKER IMAGE
@@ -118,8 +105,9 @@ jobs:
           tags: |
             ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:staging
             ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:staging-${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=staging
+          cache-to: type=gha,mode=max,scope=staging
+          # Optimized caching: separate cache scope for staging to avoid conflicts
 
         # What this does: Creates Docker image of your app tagged for staging
         # github.sha: Unique ID of this code version
@@ -149,26 +137,7 @@ jobs:
           fi
         # What this does: Configures SSH key from GitHub secrets for secure connection
       
-      # Test SSH connection before deployment
-      - name: Test SSH connection
-        run: |
-          echo "Testing SSH connection..."
-          ssh -i ~/.ssh/deploy_key \
-              -p ${{ secrets.DEPLOY_PORT || 22 }} \
-              -o StrictHostKeyChecking=no \
-              -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=10 \
-              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-              "echo 'SSH connection successful'" || {
-            echo "ERROR: SSH connection failed. Please verify:"
-            echo "1. DEPLOY_HOST is correct: ${{ secrets.DEPLOY_HOST }}"
-            echo "2. DEPLOY_USER is correct: ${{ secrets.DEPLOY_USER }}"
-            echo "3. DEPLOY_SSH_KEY is the correct private key"
-            echo "4. Public key is in ~/.ssh/authorized_keys on EC2"
-            exit 1
-          }
-      
-      # Deploy to EC2 instance via SSH
+      # Deploy to EC2 instance via SSH (includes connection test)
       - name: Deploy to staging server
         id: deploy
         env:
@@ -184,6 +153,7 @@ jobs:
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "cd ${{ secrets.DEPLOY_PATH }} && \
                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
@@ -192,7 +162,10 @@ jobs:
                docker rm frontend 2>/dev/null || true && \
                docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:staging && \
                docker image prune -f && \
-               echo 'Deployment complete!'"
+               echo 'Deployment complete!'" || {
+            echo "ERROR: Deployment failed. Check SSH connection and deployment commands."
+            exit 1
+          }
         # What this does: SSH into EC2 instance and deploy the new Docker image
       
       # Send email notification on deployment success
