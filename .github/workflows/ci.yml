@@ -544,9 +544,10 @@ jobs:
             
             View workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       
-      # Slack notification (optional)
+      # Slack notification (optional - only runs if SLACK_WEBHOOK_URL secret is set)
       - name: Send Slack notification
-        if: always() && secrets.SLACK_WEBHOOK_URL != ''
+        if: always()
+        continue-on-error: true
         uses: slackapi/slack-github-action@v1
         with:
           payload: |
