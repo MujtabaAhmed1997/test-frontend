@@ -289,32 +289,16 @@ jobs:
         run: npm test -- --passWithNoTests || echo "Tests skipped"
         continue-on-error: true
       
-      # FIX 1: Build with environment variables injected at build time
-      - name: Build application (Staging)
-        if: github.ref == 'refs/heads/staging'
+      # Build application (ENV vars will be injected at runtime via Docker)
+      - name: Build application
         env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.STAGING_API_URL }}
-          NODE_ENV: production
-        run: npm run build
-      
-      - name: Build application (Production)
-        if: github.ref == 'refs/heads/main'
-        env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.PRODUCTION_API_URL }}
-          NODE_ENV: production
-        run: npm run build
-      
-      - name: Build application (PR/Other)
-        if: github.ref != 'refs/heads/staging' && github.ref != 'refs/heads/main'
-        env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.STAGING_API_URL || 'http://localhost:3009' }}
           NODE_ENV: production
         run: npm run build
       
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: frontend-build-${{ github.sha }}
+          name: frontend-build
           path: .next/
           retention-days: 7
 
@@ -331,7 +315,7 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: frontend-build-${{ github.sha }}
+          name: frontend-build
           path: .next/
       
       - name: Set lowercase repository owner
@@ -398,7 +382,10 @@ jobs:
                docker pull ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }} && \
                docker stop frontend 2>/dev/null || true && \
                docker rm frontend 2>/dev/null || true && \
-               docker run -d --name frontend --network test-network -p 3008:3000 --restart always ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }} && \
+               docker run -d --name frontend --network test-network -p 3008:3000 \
+                 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL }} \
+                 --restart always \
+                 ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }} && \
                docker image prune -f && \
                echo 'Deployment complete!'"
       
@@ -465,6 +452,7 @@ jobs:
         id: deploy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PRODUCTION_API_URL: ${{ secrets.PRODUCTION_API_URL }}
         run: |
           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
@@ -474,7 +462,7 @@ jobs:
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
-              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'ENDSSH'
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << ENDSSH
           set -e
           
           cd ${{ secrets.DEPLOY_PATH }}
@@ -486,7 +474,9 @@ jobs:
           docker pull ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
           
           # Start new container on different port
-          docker run -d --name frontend-new --network test-network -p 3009:3000 --restart always \
+          docker run -d --name frontend-new --network test-network -p 3009:3000 \
+            -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL }} \
+            --restart always \
             ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
           
           # Health check
@@ -507,7 +497,9 @@ jobs:
             
             # Update port mapping
             docker rm frontend
-            docker run -d --name frontend --network test-network -p 3008:3000 --restart always \
+            docker run -d --name frontend --network test-network -p 3008:3000 \
+              -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL }} \
+              --restart always \
               ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
             
             # Cleanup
