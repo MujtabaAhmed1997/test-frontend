@@ -1,438 +1,204 @@
-# name: Frontend CI/CD
-
-# # "on" means "when should this run?"
-# on:
-#   push:
-#     branches: [staging,main]
-#   pull_request:
-#     branches: [staging,main]
-
-# permissions:
-#   contents: read
-#   packages: write
-
-# # Jobs: The actual work to do
-# jobs:
-
-#   # JOB 1: BUILD AND TEST
-#   build-and-test:
-#    # Name shown in GitHub UI
-#     name : Frontend Build AND Test
-#    # What computer to use (Ubuntu Linux)
-#     runs-on: ubuntu-latest
-   
-#    #individual task
-#     steps:
-#       #step 1 is to get the code
-#      - name: Checkout code
-#         # "uses" means "use this pre-made action"
-#         # actions/checkout@v4 is made by GitHub 
-#        uses: actions/checkout@v4
-#         # What this does: Downloads your code from GitHub
-      
-#       #step 2 install node 
-#      - name: Setup Node jobs
-#        uses: actions/setup-node@v4
-#        with:
-#           node-version: '22'
-#         # Cache npm dependencies for faster builds
-#           cache: 'npm'
-      
-#       #step 3 install dependecies
-#      - name: Install Dependecies
-#        run: npm ci
-#         # What this does: Installs packages from package-lock.json
-#         # Why "npm ci" not "npm install"?
-#         # - npm ci is faster
-#         # - npm ci is more reliable in CI/CD
-#         # - npm ci uses exact versions from package-lock.json
-     
-#      #step 4 check code quality
-#      - name: Code Quality Checkout
-#        run: npm run lint || echo linting is skipped
-#          # What this does: Checks code style/quality
-#         # "|| echo" means: if lint fails, just print message (don't stop)
-
-#       #step 5 Testing
-#      - name: Testing
-#        run: npm test -- --passWithNoTests || echo "Test script not found, skipping tests"
-#        continue-on-error: true
-#         # What this does: Runs your test files if test script exists
-#         # continue-on-error: Allows step to pass even if test script doesn't exist
-
-#       #step 6 Build 
-#      - name: Build application
-#        env:
-#           NEXT_PUBLIC_BACKEND_URL: ${{ secrets.API_URL }}
-#        run: npm run build
-#         # What this does: Creates production build
-#         # ${{ secrets.API_URL }}: Gets secret from GitHub settings
-
-#       #step 7 save build
-#      - name: Upload Build to Artifact 
-#        uses: actions/upload-artifact@v4
-#        with:
-#           name: frontend-build
-#           path: .next/
-#           retention-days: 7
-#            # What this does: Saves build files for later use
-#         # retention-days: Keep files for 7 days
-
-
-#  #JOB 2: BUILD DOCKER IMAGE
-#   docker-build:
-#     name: Build Docker Image
-#     runs-on: ubuntu-latest
-#     # This job needs build-and-test to finish first
-#     needs: build-and-test
-    
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v4
-      
-#       # Convert repository owner to lowercase for Docker tags
-#       - name: Set lowercase repository owner
-#         id: repo-owner
-#         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
-      
-#       # Setup Docker Buildx (improved Docker builder)
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v2
-#         # What this does: Installs better Docker builder
-      
-#       #login into github container registry
-#       - name: Log in to GitHub Container Registry
-#         uses: docker/login-action@v2
-#         with:
-#           registry: ghcr.io
-#           username: ${{ github.actor }}
-#           password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
-      
-#       # Build the Docker image
-#       - name: Build Docker image
-#         uses: docker/build-push-action@v4
-#         with:
-#           # context: ./pocketmate-frontend
-#           # file: ./pocketmate-frontend/Dockerfile
-#           push: true
-#           tags: |
-#             ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:latest
-#             ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:${{ github.sha }}
-#           cache-from: type=gha
-#           cache-to: type=gha,mode=max
-
-#         # What this does: Creates Docker image of your app
-#         # github.sha: Unique ID of this code version
-
-#   # JOB 3: DEPLOY TO STAGING
-#   deploy-staging:
-#     name: Deploy to Staging
-#     runs-on: ubuntu-latest
-#     needs: docker-build
-#     # Only run if branch is "staging"
-#     if: github.ref == 'refs/heads/staging'
-#     # This is a protected environment
-#     environment:
-#       name: staging
-#       # Note: URL cannot use secrets directly, update manually or use environment-specific URL
-    
-#     steps:
-#       # Setup SSH key for deployment
-#       - name: Setup SSH key
-#         run: |
-#           mkdir -p ~/.ssh
-#           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-#           chmod 600 ~/.ssh/deploy_key
-#           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
-#         # What this does: Configures SSH key from GitHub secrets for secure connection
-      
-#       # Deploy to EC2 instance via SSH
-#       - name: Deploy to staging server
-#         env:
-#           API_URL: ${{ secrets.STAGING_API_URL }}
-#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           GITHUB_ACTOR: ${{ github.actor }}
-#           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
-#         run: |
-#           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-#           REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-#           echo "Deploying to EC2 staging server..."
-#           ssh -i ~/.ssh/deploy_key \
-#               -p ${{ secrets.DEPLOY_PORT || 22 }} \
-#               -o StrictHostKeyChecking=no \
-#               -o UserKnownHostsFile=/dev/null \
-#               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-#               "cd ${{ secrets.DEPLOY_PATH }} && \
-#                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
-#                docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
-#                docker stop frontend 2>/dev/null || true && \
-#                docker rm frontend 2>/dev/null || true && \
-#                docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
-#                docker image prune -f && \
-#                echo 'Deployment complete!'"
-#         # What this does: SSH into EC2 instance and deploy the new Docker image
-
-#   # JOB 4: DEPLOY TO PRODUCTION
-#   deploy-production:
-#     name: Deploy to Production
-#     runs-on: ubuntu-latest
-#     needs: docker-build
-#     # Only run if branch is "main"
-#     if: github.ref == 'refs/heads/main'
-#     environment:
-#       name: production
-#       # Note: URL cannot use secrets directly, update manually or use environment-specific URL
-    
-#     steps:
-#       # Setup SSH key for deployment
-#       - name: Setup SSH key
-#         run: |
-#           mkdir -p ~/.ssh
-#           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
-#           chmod 600 ~/.ssh/deploy_key
-#           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
-#           # Verify SSH key format
-#           if ! ssh-keygen -l -f ~/.ssh/deploy_key &>/dev/null; then
-#             echo "ERROR: Invalid SSH key format in DEPLOY_SSH_KEY secret"
-#             exit 1
-#           fi
-#         # What this does: Configures SSH key from GitHub secrets for secure connection
-      
-#       # Test SSH connection before deployment
-#       - name: Test SSH connection
-#         run: |
-#           echo "Testing SSH connection..."
-#           ssh -i ~/.ssh/deploy_key \
-#               -p ${{ secrets.DEPLOY_PORT || 22 }} \
-#               -o StrictHostKeyChecking=no \
-#               -o UserKnownHostsFile=/dev/null \
-#               -o ConnectTimeout=10 \
-#               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-#               "echo 'SSH connection successful'" || {
-#             echo "ERROR: SSH connection failed. Please verify:"
-#             echo "1. DEPLOY_HOST is correct: ${{ secrets.DEPLOY_HOST }}"
-#             echo "2. DEPLOY_USER is correct: ${{ secrets.DEPLOY_USER }}"
-#             echo "3. DEPLOY_SSH_KEY is the correct private key"
-#             echo "4. Public key is in ~/.ssh/authorized_keys on EC2"
-#             exit 1
-#           }
-      
-#       # Deploy to EC2 instance via SSH
-#       - name: Deploy to production server
-#         env:
-#           API_URL: ${{ secrets.PRODUCTION_API_URL }}
-#           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-#           GITHUB_ACTOR: ${{ github.actor }}
-#           GITHUB_REPO_OWNER: ${{ github.repository_owner }}
-#         run: |
-#           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-#           REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-#           echo "Deploying to EC2 production server..."
-#           ssh -i ~/.ssh/deploy_key \
-#               -p ${{ secrets.DEPLOY_PORT || 22 }} \
-#               -o StrictHostKeyChecking=no \
-#               -o UserKnownHostsFile=/dev/null \
-#               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-#               "cd ${{ secrets.DEPLOY_PATH }} && \
-#                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
-#                docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
-#                docker stop frontend 2>/dev/null || true && \
-#                docker rm frontend 2>/dev/null || true && \
-#                docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
-#                docker image prune -f && \
-#                echo 'Deployment complete!'"
-#         # What this does: SSH into EC2 instance and deploy the new Docker image
-
-
-
 name: Frontend CI/CD
 
+# "on" means "when should this run?"
 on:
   push:
-    branches: [staging, main]
+    branches: [staging,main]
   pull_request:
-    branches: [staging, main]
+    branches: [staging,main]
 
 permissions:
   contents: read
   packages: write
 
-# Environment variables at workflow level
-env:
-  NODE_VERSION: '22'
-  DOCKER_REGISTRY: ghcr.io
-
+# Jobs: The actual work to do
 jobs:
+
   # JOB 1: BUILD AND TEST
   build-and-test:
-    name: Frontend Build and Test
+   # Name shown in GitHub UI
+    name : Frontend Build AND Test
+   # What computer to use (Ubuntu Linux)
     runs-on: ubuntu-latest
-    
+   
+   #individual task
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      #step 1 is to get the code
+     - name: Checkout code
+        # "uses" means "use this pre-made action"
+        # actions/checkout@v4 is made by GitHub 
+       uses: actions/checkout@v4
+        # What this does: Downloads your code from GitHub
       
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
+      #step 2 install node 
+     - name: Setup Node jobs
+       uses: actions/setup-node@v4
+       with:
+          node-version: '22'
+        # Cache npm dependencies for faster builds
           cache: 'npm'
       
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Code quality check
-        run: npm run lint || echo "Linting skipped"
-        continue-on-error: true
-      
-      - name: Run tests
-        run: npm test -- --passWithNoTests || echo "Tests skipped"
-        continue-on-error: true
-      
-      # Build application (ENV vars will be injected at runtime via Docker)
-      - name: Build application
-        env:
-          NODE_ENV: production
-        run: npm run build
-      
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
+      #step 3 install dependecies
+     - name: Install Dependecies
+       run: npm ci
+        # What this does: Installs packages from package-lock.json
+        # Why "npm ci" not "npm install"?
+        # - npm ci is faster
+        # - npm ci is more reliable in CI/CD
+        # - npm ci uses exact versions from package-lock.json
+     
+     #step 4 check code quality
+     - name: Code Quality Checkout
+       run: npm run lint || echo linting is skipped
+         # What this does: Checks code style/quality
+        # "|| echo" means: if lint fails, just print message (don't stop)
+
+      #step 5 Testing
+     - name: Testing
+       run: npm test -- --passWithNoTests || echo "Test script not found, skipping tests"
+       continue-on-error: true
+        # What this does: Runs your test files if test script exists
+        # continue-on-error: Allows step to pass even if test script doesn't exist
+
+      #step 6 Build 
+     - name: Build application
+       env:
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.API_URL }}
+       run: npm run build
+        # What this does: Creates production build
+        # ${{ secrets.API_URL }}: Gets secret from GitHub settings
+
+      #step 7 save build
+     - name: Upload Build to Artifact 
+       uses: actions/upload-artifact@v4
+       with:
           name: frontend-build
           path: .next/
           retention-days: 7
+           # What this does: Saves build files for later use
+        # retention-days: Keep files for 7 days
 
-  # JOB 2: BUILD DOCKER IMAGE
+
+ #JOB 2: BUILD DOCKER IMAGE
   docker-build:
     name: Build Docker Image
     runs-on: ubuntu-latest
+    # This job needs build-and-test to finish first
     needs: build-and-test
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: frontend-build
-          path: .next/
-      
+      # Convert repository owner to lowercase for Docker tags
       - name: Set lowercase repository owner
         id: repo-owner
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
       
+      # Setup Docker Buildx (improved Docker builder)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
+        # What this does: Installs better Docker builder
       
+      #login into github container registry
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          registry: ${{ env.DOCKER_REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
       
-      - name: Build and push Docker image
+      # Build the Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
-          context: .
+          # context: ./pocketmate-frontend
+          # file: ./pocketmate-frontend/Dockerfile
           push: true
           tags: |
-            ${{ env.DOCKER_REGISTRY }}/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:latest
-            ${{ env.DOCKER_REGISTRY }}/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:${{ github.sha }}
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:latest
+            ghcr.io/${{ steps.repo-owner.outputs.owner }}/${{ github.event.repository.name }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            BUILDTIME=${{ github.event.head_commit.timestamp }}
-            VERSION=${{ github.sha }}
+
+        # What this does: Creates Docker image of your app
+        # github.sha: Unique ID of this code version
 
   # JOB 3: DEPLOY TO STAGING
   deploy-staging:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: docker-build
+    # Only run if branch is "staging"
     if: github.ref == 'refs/heads/staging'
+    # This is a protected environment
     environment:
       name: staging
+      # Note: URL cannot use secrets directly, update manually or use environment-specific URL
     
     steps:
+      # Setup SSH key for deployment
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
+        # What this does: Configures SSH key from GitHub secrets for secure connection
       
+      # Deploy to EC2 instance via SSH
       - name: Deploy to staging server
-        id: deploy
         env:
+          API_URL: ${{ secrets.STAGING_API_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
         run: |
           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          
-          echo "Deploying to staging server..."
+          echo "Deploying to EC2 staging server..."
           ssh -i ~/.ssh/deploy_key \
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "cd ${{ secrets.DEPLOY_PATH }} && \
-               echo '$GITHUB_TOKEN' | docker login ${{ env.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin && \
-               docker pull ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }} && \
+               echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
+               docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
                docker stop frontend 2>/dev/null || true && \
                docker rm frontend 2>/dev/null || true && \
-               docker run -d --name frontend --network test-network -p 3008:3000 \
-                 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL }} \
-                 --restart always \
-                 ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }} && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.STAGING_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
                docker image prune -f && \
                echo 'Deployment complete!'"
-      
-      # FIX 2: Email notification for staging deployment
-      - name: Send deployment notification
-        if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "Staging Deployment ${{ job.status }}: ${{ github.repository }}"
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          from: GitHub Actions
-          body: |
-            Deployment Status: ${{ job.status }}
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
-            
-            View workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # What this does: SSH into EC2 instance and deploy the new Docker image
 
-  # JOB 4: DEPLOY TO PRODUCTION (with Rolling Deployment)
+  # JOB 4: DEPLOY TO PRODUCTION
   deploy-production:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: docker-build
+    # Only run if branch is "main"
     if: github.ref == 'refs/heads/main'
     environment:
       name: production
+      # Note: URL cannot use secrets directly, update manually or use environment-specific URL
     
     steps:
+      # Setup SSH key for deployment
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p ${{ secrets.DEPLOY_PORT || 22 }} ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts || true
-          
+          # Verify SSH key format
           if ! ssh-keygen -l -f ~/.ssh/deploy_key &>/dev/null; then
-            echo "ERROR: Invalid SSH key format"
+            echo "ERROR: Invalid SSH key format in DEPLOY_SSH_KEY secret"
             exit 1
           fi
+        # What this does: Configures SSH key from GitHub secrets for secure connection
       
+      # Test SSH connection before deployment
       - name: Test SSH connection
         run: |
           echo "Testing SSH connection..."
@@ -443,118 +209,39 @@ jobs:
               -o ConnectTimeout=10 \
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
               "echo 'SSH connection successful'" || {
-            echo "ERROR: SSH connection failed"
+            echo "ERROR: SSH connection failed. Please verify:"
+            echo "1. DEPLOY_HOST is correct: ${{ secrets.DEPLOY_HOST }}"
+            echo "2. DEPLOY_USER is correct: ${{ secrets.DEPLOY_USER }}"
+            echo "3. DEPLOY_SSH_KEY is the correct private key"
+            echo "4. Public key is in ~/.ssh/authorized_keys on EC2"
             exit 1
           }
       
-      # Rolling deployment implementation
-      - name: Deploy to production (Rolling Deployment)
-        id: deploy
+      # Deploy to EC2 instance via SSH
+      - name: Deploy to production server
         env:
+          API_URL: ${{ secrets.PRODUCTION_API_URL }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PRODUCTION_API_URL: ${{ secrets.PRODUCTION_API_URL }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_REPO_OWNER: ${{ github.repository_owner }}
         run: |
           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           REPO_NAME_LOWER=$(echo "${{ github.event.repository.name }}" | tr '[:upper:]' '[:lower:]')
-          
-          echo "Starting rolling deployment to production..."
+          echo "Deploying to EC2 production server..."
           ssh -i ~/.ssh/deploy_key \
               -p ${{ secrets.DEPLOY_PORT || 22 }} \
               -o StrictHostKeyChecking=no \
               -o UserKnownHostsFile=/dev/null \
-              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << ENDSSH
-          set -e
-          
-          cd ${{ secrets.DEPLOY_PATH }}
-          
-          # Login to registry
-          echo '${{ secrets.GITHUB_TOKEN }}' | docker login ${{ env.DOCKER_REGISTRY }} -u ${{ github.actor }} --password-stdin
-          
-          # Pull new image
-          docker pull ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
-          
-          # Start new container on different port
-          docker run -d --name frontend-new --network test-network -p 3009:3000 \
-            -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL }} \
-            --restart always \
-            ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
-          
-          # Health check
-          echo "Waiting for new container to be healthy..."
-          sleep 10
-          
-          # Check if new container is running
-          if docker ps | grep -q frontend-new; then
-            echo "New container is healthy"
-            
-            # Stop old container
-            docker stop frontend 2>/dev/null || true
-            docker rm frontend 2>/dev/null || true
-            
-            # Rename new container
-            docker stop frontend-new
-            docker rename frontend-new frontend
-            
-            # Update port mapping
-            docker rm frontend
-            docker run -d --name frontend --network test-network -p 3008:3000 \
-              -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL }} \
-              --restart always \
-              ${{ env.DOCKER_REGISTRY }}/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:${{ github.sha }}
-            
-            # Cleanup
-            docker image prune -f
-            
-            echo "Rolling deployment completed successfully!"
-          else
-            echo "ERROR: New container failed to start"
-            docker stop frontend-new 2>/dev/null || true
-            docker rm frontend-new 2>/dev/null || true
-            exit 1
-          fi
-          ENDSSH
-      
-      # FIX 2: Email notification for production deployment
-      - name: Send deployment notification
-        if: always()
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 587
-          username: ${{ secrets.EMAIL_USERNAME }}
-          password: ${{ secrets.EMAIL_PASSWORD }}
-          subject: "🚀 Production Deployment ${{ job.status }}: ${{ github.repository }}"
-          to: ${{ secrets.NOTIFICATION_EMAIL }}
-          from: GitHub Actions
-          body: |
-            Deployment Status: ${{ job.status }}
-            Repository: ${{ github.repository }}
-            Branch: ${{ github.ref_name }}
-            Commit: ${{ github.sha }}
-            Author: ${{ github.actor }}
-            Message: ${{ github.event.head_commit.message }}
-            
-            View workflow: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      
-      # Slack notification (optional - only runs if SLACK_WEBHOOK_URL secret is set)
-      - name: Send Slack notification
-        if: always()
-        continue-on-error: true
-        uses: slackapi/slack-github-action@v1
-        with:
-          payload: |
-            {
-              "text": "Production Deployment ${{ job.status }}",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*Production Deployment ${{ job.status }}*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+              ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+              "cd ${{ secrets.DEPLOY_PATH }} && \
+               echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
+               docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
+               docker stop frontend 2>/dev/null || true && \
+               docker rm frontend 2>/dev/null || true && \
+               docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=${{ secrets.PRODUCTION_API_URL || 'http://localhost:3009' }} --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
+               docker image prune -f && \
+               echo 'Deployment complete!'"
+        # What this does: SSH into EC2 instance and deploy the new Docker image
+
+
+
