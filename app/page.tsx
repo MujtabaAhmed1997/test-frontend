@@ -71,7 +71,7 @@ export default function Home() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-gray-800"
-              placeholder="your@email.com"
+              placeholder=`${process.env.NEXT_PUBLIC_BACKEND_URL}`
             />
           </div>
 
