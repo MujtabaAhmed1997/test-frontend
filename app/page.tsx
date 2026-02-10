@@ -8,7 +8,8 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
+  // Backend API base URL - use env from CI/CD, fall back to EC2 backend
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://51.20.182.220:3009';
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
