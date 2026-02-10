@@ -59,7 +59,7 @@ jobs:
       #step 6 Build 
      - name: Build application
        env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.PRODUCTION_API_URL || secrets.API_URL }}
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
        run: npm run build
         # What this does: Creates production build
         # ${{ secrets.API_URL }}: Gets secret from GitHub settings
@@ -72,8 +72,6 @@ jobs:
     runs-on: ubuntu-latest
     # This job needs build-and-test to finish first
     needs: build-and-test
-    env:
-    NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
     
     steps:
       - name: Checkout code
