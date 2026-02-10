@@ -61,6 +61,8 @@ jobs:
        env:
           NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
        run: npm run build
+
+       
         # What this does: Creates production build
         # ${{ secrets.API_URL }}: Gets secret from GitHub settings
         # Note: Build artifact not uploaded - Docker builds from source directly
