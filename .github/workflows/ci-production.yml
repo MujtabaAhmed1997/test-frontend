@@ -79,7 +79,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      # Convert repository owner to lowercase for Docker tags
+      # Convert repository owner to lowercase for Docker tags  12
       - name: Set lowercase repository owner
         id: repo-owner
         run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
