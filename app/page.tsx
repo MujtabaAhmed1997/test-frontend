@@ -9,12 +9,11 @@ export default function Home() {
   const [error, setError] = useState("");
 
   // Backend API base URL - use env from CI/CD, fall back to EC2 backend
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://51.20.182.220:3009';
+  const BACKEND_URL ='http://51.20.182.220:3009';
 
   //comment for testing CI/CD workflow
   //comment for testing CI/CD workflow
   console.log('BACKEND_URL', BACKEND_URL);
-  console.log('NEXT_PUBLIC_BACKEND_URL', process.env.NEXT_PUBLIC_BACKEND_URL);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +70,7 @@ export default function Home() {
               onChange={(e) => setEmail(e.target.value)}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition text-gray-800"
-              placeholder=`${process.env.NEXT_PUBLIC_BACKEND_URL}`
+            placeholder="your@email.com"
             />
           </div>
 
