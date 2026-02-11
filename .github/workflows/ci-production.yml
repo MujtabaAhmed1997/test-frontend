@@ -157,7 +157,8 @@ jobs:
               -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=10 \
               ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-              "cd ${{ secrets.DEPLOY_PATH }} && \
+              "mkdir -p ${{ secrets.DEPLOY_PATH || '/home/ubuntu/projects' }} && \
+               cd ${{ secrets.DEPLOY_PATH || '/home/ubuntu/projects' }} && \
                echo '$GITHUB_TOKEN' | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin && \
                docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
                docker rm -f frontend 2>/dev/null || true && \
