@@ -170,7 +170,7 @@ jobs:
             echo "ERROR: Deployment failed. Check SSH connection and deployment commands."
             exit 1
           }
-        # What this does: SSH into EC2 instance and deploy the new Docker image
+        # What this does: SSH into EC2 instance and deploy the new Docker image  asada
       
       # Send email notification on deployment success
       - name: Send deployment success email

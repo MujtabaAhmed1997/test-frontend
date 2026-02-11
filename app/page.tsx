@@ -10,6 +10,7 @@ export default function Home() {
 /////
   // Backend API base URL - use env from CI/CD, fall back to EC2 backend
   const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://51.20.182.220:3009';
+  //sdsadas
 
   //comment for testing CI/CD workflow
   //comment for testing CI/CD workflow
