@@ -163,7 +163,7 @@ jobs:
                docker pull ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
                docker rm -f frontend 2>/dev/null || true && \
                sleep 2 && \
-               BACKEND_URL='${{ secrets.NEXT_PUBLIC_BACKEND_URL || secrets.PRODUCTION_API_URL || '\''http://51.20.182.220:3009'\'' }}' && \
+               BACKEND_URL=\"${{ secrets.NEXT_PUBLIC_BACKEND_URL || secrets.PRODUCTION_API_URL || 'http://51.20.182.220:3009' }}\" && \
                docker run -d --name frontend --network test-network -p 3008:3000 -e NEXT_PUBLIC_BACKEND_URL=\"\$BACKEND_URL\" --restart always ghcr.io/$REPO_OWNER_LOWER/$REPO_NAME_LOWER:latest && \
                docker image prune -f && \
                echo 'Deployment complete!'" || {
