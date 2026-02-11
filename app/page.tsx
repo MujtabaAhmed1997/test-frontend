@@ -8,8 +8,8 @@ export default function Home() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 /////
-  // Backend API base URL - use env from CI/CD, fall back to EC2 backend
-  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://51.20.182.220:3009';
+  // Backend API base URL - use env from CI/CD, fall back to HTTPS API domain
+  const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://mujtaba.api.quickflashcards.site';
   //sdsadas
 
   //comment for testing CI/CD workflow

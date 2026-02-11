@@ -59,8 +59,10 @@ jobs:
       #step 6 Build 
      - name: Build application
        env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL }}
-       run: npm run build
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL || secrets.PRODUCTION_API_URL || 'https://mujtaba.api.quickflashcards.site' }}
+       run: |
+         echo "Building with NEXT_PUBLIC_BACKEND_URL: $NEXT_PUBLIC_BACKEND_URL"
+         npm run build
 
        
         # What this does: Creates production build

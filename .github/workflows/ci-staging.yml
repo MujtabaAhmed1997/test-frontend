@@ -59,8 +59,10 @@ jobs:
       #step 6 Build 
      - name: Build application
        env:
-          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.STAGING_API_URL || secrets.API_URL }}
-       run: npm run build
+          NEXT_PUBLIC_BACKEND_URL: ${{ secrets.NEXT_PUBLIC_BACKEND_URL || secrets.STAGING_API_URL || secrets.API_URL || 'http://51.20.182.220:3009' }}
+       run: |
+         echo "Building with NEXT_PUBLIC_BACKEND_URL: $NEXT_PUBLIC_BACKEND_URL"
+         npm run build
         # What this does: Creates production build
         # ${{ secrets.API_URL }}: Gets secret from GitHub settings
         # Note: Build artifact not uploaded - Docker builds from source directly
